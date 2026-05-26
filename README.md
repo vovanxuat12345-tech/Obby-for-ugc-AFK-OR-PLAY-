@@ -76,7 +76,7 @@ local isMinimized = false
 local protectionConnection = nil
 
 -- ==========================================
--- MENU LOADING CHỮ MÀU ĐỎ + ANIMATION TỪ DƯỚI LÊN TỪNG CHỮ (ĐÃ SỬA LỖI TIẾNG VIỆT)
+-- MENU LOADING CHỮ MÀU ĐỎ + SUBTITLE ROBTOP
 -- ==========================================
 local function createLoadingScreen()
     if not player:FindFirstChild("PlayerGui") then
@@ -92,10 +92,16 @@ local function createLoadingScreen()
     bg.BackgroundTransparency = 0.2
     bg.BorderSizePixel = 0
     
-    -- Khung chứa văn bản nằm giữa màn hình
-    local textContainer = Instance.new("Frame", bg)
-    textContainer.Size = UDim2.new(0, 600, 0, 60)
-    textContainer.Position = UDim2.new(0.5, -300, 0.5, -30)
+    -- Khung tổng chứa cả tên chính và sub nhỏ để căn giữa màn hình dễ hơn
+    local centerContainer = Instance.new("Frame", bg)
+    centerContainer.Size = UDim2.new(0, 600, 0, 100)
+    centerContainer.Position = UDim2.new(0.5, -300, 0.5, -50)
+    centerContainer.BackgroundTransparency = 1
+    
+    -- Khung chứa văn bản chính (MADE BY CHIẾN ĐO)
+    local textContainer = Instance.new("Frame", centerContainer)
+    textContainer.Size = UDim2.new(1, 0, 0, 60)
+    textContainer.Position = UDim2.new(0, 0, 0, 0)
     textContainer.BackgroundTransparency = 1
     textContainer.ClipsDescendants = false 
     
@@ -105,6 +111,17 @@ local function createLoadingScreen()
     layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
     layout.VerticalAlignment = Enum.VerticalAlignment.Center
     layout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    -- Chữ nhỏ ở dưới theo yêu cầu bồ nè
+    local subVersionLabel = Instance.new("TextLabel", centerContainer)
+    subVersionLabel.Size = UDim2.new(1, 0, 0, 30)
+    subVersionLabel.Position = UDim2.new(0, 0, 0, 65) 
+    subVersionLabel.BackgroundTransparency = 1
+    subVersionLabel.Text = "(version 2.209 By RobTop)"
+    subVersionLabel.TextColor3 = Color3.fromRGB(180, 180, 180) 
+    subVersionLabel.Font = Enum.Font.Gotham
+    subVersionLabel.TextSize = 16
+    subVersionLabel.TextTransparency = 1 
 
     -- Tạo các chấm đỏ chuyển động nền
     task.spawn(function()
@@ -126,11 +143,10 @@ local function createLoadingScreen()
         local char = utf8.char(c)
         local charLabel = Instance.new("TextLabel", textContainer)
         
-        -- Cân đối độ rộng: dấu cách rộng 15, chữ bình thường rộng 28-32 tùy ký tự
         charLabel.Size = UDim2.new(0, char == " " and 15 or 30, 1, 0)
         charLabel.BackgroundTransparency = 1
         charLabel.Text = char
-        charLabel.TextColor3 = Color3.new(1, 0, 0) -- Màu đỏ chủ đạo
+        charLabel.TextColor3 = Color3.new(1, 0, 0) 
         charLabel.Font = Enum.Font.GothamBold
         charLabel.TextSize = 45
         charLabel.LayoutOrder = order
@@ -146,14 +162,17 @@ local function createLoadingScreen()
     -- Thực hiện Animation chạy từng chữ từ trái sang phải
     task.spawn(function()
         for index, label in ipairs(labels) do
-            -- Tạo hiệu ứng đẩy từ dưới lên vị trí gốc (y = 0) và hiện rõ chữ
             TweenService:Create(label, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
                 Position = UDim2.new(0, 0, 0, 0),
                 TextTransparency = 0
             }):Play()
             
-            task.wait(0.1) -- Tốc độ lướt chữ nhịp nhàng hơn một chút
+            task.wait(0.1) 
         end
+        -- Sau khi chữ chính chạy gần xong, cho hiện chữ phiên bản RobTop lên mượt mà
+        TweenService:Create(subVersionLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+            TextTransparency = 0
+        }):Play()
     end)
 
     task.wait(3) -- Giữ nguyên màn hình đúng 3 giây
@@ -200,6 +219,54 @@ end)
 local topContent = Instance.new("Frame", frame); topContent.Size = UDim2.new(1, 0, 0, 70); topContent.BackgroundTransparency = 1; topContent.ZIndex = 5
 local title = Instance.new("TextLabel", topContent); title.Size = UDim2.new(1, 0, 0, 30); title.Position = UDim2.new(0, 0, 0, 15); title.Text = "obby for ugc"; title.TextColor3 = Color3.new(1, 1, 1); title.Font = Enum.Font.GothamBold; title.TextSize = 18; title.BackgroundTransparency = 1; title.ZIndex = 6
 local subTitle = Instance.new("TextLabel", topContent); subTitle.Size = UDim2.new(1, 0, 0, 20); subTitle.Position = UDim2.new(0, 0, 0, 40); subTitle.Text = "(AFK OR PLAY)"; subTitle.TextColor3 = Color3.fromRGB(200, 200, 200); subTitle.Font = Enum.Font.Gotham; subTitle.TextSize = 14; subTitle.BackgroundTransparency = 1; subTitle.ZIndex = 6
+
+-- Nút thông báo dấu chấm than "!" ở góc trên cùng bên trái
+local infoBtn = Instance.new("TextButton", frame)
+infoBtn.Size = UDim2.new(0, 25, 0, 25)
+infoBtn.Position = UDim2.new(0, 5, 0, 5)
+infoBtn.Text = "!"
+infoBtn.TextColor3 = Color3.new(1, 0, 0) -- Màu đỏ cảnh báo
+infoBtn.BackgroundTransparency = 1
+infoBtn.Font = Enum.Font.GothamBold
+infoBtn.TextSize = 20
+infoBtn.ZIndex = 10
+
+-- Bảng thông báo lỗi (Đen mờ, viền đỏ, nằm giữa màn hình)
+local bugReportFrame = Instance.new("TextButton", mainGui) -- Dùng TextButton để người chơi bấm vào tự tắt nhanh được luôn
+bugReportFrame.Size = UDim2.new(0, 320, 0, 140)
+bugReportFrame.Position = UDim2.new(0.5, -160, 0.5, -70)
+bugReportFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+bugReportFrame.BackgroundTransparency = 0.25 -- Đen mờ theo yêu cầu
+bugReportFrame.Visible = false
+bugReportFrame.ZIndex = 100
+Instance.new("UICorner", bugReportFrame).CornerRadius = UDim.new(0, 8)
+
+-- Tạo viền màu đỏ cho bảng thông báo
+local stroke = Instance.new("UIStroke", bugReportFrame)
+stroke.Color = Color3.new(1, 0, 0) -- Viền đỏ
+stroke.Thickness = 2
+stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+
+-- Nội dung chữ tiếng Anh bên trong bảng thông báo
+local bugTextLabel = Instance.new("TextLabel", bugReportFrame)
+bugTextLabel.Size = UDim2.new(1, -20, 1, -20)
+bugTextLabel.Position = UDim2.new(0, 10, 0, 10)
+bugTextLabel.BackgroundTransparency = 1
+bugTextLabel.Text = "I'm sorry, but there are still a few bugs that I haven't been able to fix yet, such as at stage 243. After all, I'm truly sorry everyone."
+bugTextLabel.TextColor3 = Color3.new(1, 1, 1)
+bugTextLabel.Font = Enum.Font.GothamMedium
+bugTextLabel.TextSize = 14
+bugTextLabel.TextWrapped = true
+bugTextLabel.ZIndex = 101
+
+-- Logic bật tắt bảng thông báo lỗi
+infoBtn.MouseButton1Click:Connect(function()
+    bugReportFrame.Visible = not bugReportFrame.Visible
+end)
+
+bugReportFrame.MouseButton1Click:Connect(function()
+    bugReportFrame.Visible = false
+end)
 
 local bottomContent = Instance.new("Frame", frame); bottomContent.Size = UDim2.new(1, 0, 0, 110); bottomContent.Position = UDim2.new(0, 0, 0, 70); bottomContent.BackgroundTransparency = 1; bottomContent.ZIndex = 5
 local btn = Instance.new("TextButton", bottomContent); btn.Size = UDim2.new(0, 180, 0, 50); btn.Position = UDim2.new(0.5, -90, 0, 20); btn.Text = "Auto Farm Stage: OFF"; btn.BackgroundColor3 = Color3.new(1, 1, 1); btn.TextColor3 = Color3.new(0, 0, 0); btn.Font = Enum.Font.GothamBold; btn.TextSize = 15; btn.ZIndex = 6; btn.Active = true
@@ -268,6 +335,23 @@ local function flyToTarget(target)
 
     hrp.Velocity = Vector3.new(0, 0.2, 0)
     if conn then conn:Disconnect(); conn = nil end 
+    
+    -- ========================================================
+    -- ĐÃ SỬA: PHÁT HIỆN CHECKPOINT "243" THÌ BAY SANG TRÁI 200 STUDS
+    -- ========================================================
+    if target.Name == "243" and running then
+        -- Xác định hướng bên trái nhân vật (-RightVector)
+        local leftDirection = -hrp.CFrame.RightVector
+        local leftTargetPos = hrp.Position + (leftDirection * 200)
+        
+        -- Thực hiện bay bằng biến vận tốc currentFlySpeed có sẵn
+        while running and (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(leftTargetPos.X, leftTargetPos.Z)).Magnitude > 5 do
+            hrp.Velocity = leftDirection * currentFlySpeed
+            task.wait()
+        end
+        hrp.Velocity = Vector3.new(0, 0.2, 0) -- Reset lại vận tốc
+    end
+    -- ========================================================
     
     currentFlySpeed = DEFAULT_SETTINGS.FLY_SPEED
     scanMultiplier = 1
