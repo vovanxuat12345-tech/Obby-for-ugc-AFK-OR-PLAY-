@@ -38,7 +38,7 @@ local function autoRejoin()
             local p = game:GetService("Players").LocalPlayer
             repeat task.wait() until p and p:FindFirstChild("PlayerGui")
             
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/vovanxuat12345-tech/Script-test/refs/heads/main/README.md"))()
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/vovanxuat12345-tech/Obby-for-ugc-AFK-OR-PLAY-/refs/heads/main/README.md"))()
         ]])
     end
     
@@ -336,22 +336,16 @@ local function flyToTarget(target)
     hrp.Velocity = Vector3.new(0, 0.2, 0)
     if conn then conn:Disconnect(); conn = nil end 
     
-    -- ========================================================
-    -- ĐÃ SỬA: PHÁT HIỆN CHECKPOINT "243" THÌ BAY SANG TRÁI 200 STUDS
-    -- ========================================================
+    -- LOGIC STAGE 243 ĐƯỢC CHÈN VÀO ĐÂY:
     if target.Name == "243" and running then
-        -- Xác định hướng bên trái nhân vật (-RightVector)
         local leftDirection = -hrp.CFrame.RightVector
         local leftTargetPos = hrp.Position + (leftDirection * 200)
-        
-        -- Thực hiện bay bằng biến vận tốc currentFlySpeed có sẵn
         while running and (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(leftTargetPos.X, leftTargetPos.Z)).Magnitude > 5 do
             hrp.Velocity = leftDirection * currentFlySpeed
             task.wait()
         end
-        hrp.Velocity = Vector3.new(0, 0.2, 0) -- Reset lại vận tốc
+        hrp.Velocity = Vector3.new(0, 0.2, 0)
     end
-    -- ========================================================
     
     currentFlySpeed = DEFAULT_SETTINGS.FLY_SPEED
     scanMultiplier = 1
