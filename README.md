@@ -62,8 +62,8 @@ end)
 -- ==========================================
 
 local DEFAULT_SETTINGS = {
-    FLY_UP_HEIGHT = 0,
-    FLY_SPEED = 50, 
+    FLY_UP_HEIGHT = 10,
+    FLY_SPEED = 60, 
     WAIT_TIME = 0.28,
     CHECKPOINT_FOLDER = workspace:WaitForChild("Checkpoints", 15)
 }
