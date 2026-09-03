@@ -5,119 +5,188 @@ local UserInputService = game:GetService("UserInputService")
 local TeleportService = game:GetService("TeleportService")
 local GuiService = game:GetService("GuiService")
 local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
 
--- ========================================================
--- KIỂM TRA CHỐNG TRÙNG SCRIPT TOÀN CỤC (SỬA LỖI REJOIN TRÙNG)
--- ========================================================
-if _G.ScriptRunning then
-    return
-end
+if _G.ScriptRunning then return end
 _G.ScriptRunning = true 
 
--- Tự xóa UI cũ nếu còn sót lại từ server trước
 local oldGui = player:WaitForChild("PlayerGui"):FindFirstChild("AutoObby_GodAlways")
 if oldGui then oldGui:Destroy() end
 local oldLoading = player:WaitForChild("PlayerGui"):FindFirstChild("Loading_ChienDo")
 if oldLoading then oldLoading:Destroy() end
 
--- ==========================================
--- ĐOẠN XỬ LÝ AUTO REJOIN CHUẨN (ĐÃ ĐỔI LINK MỚI)
--- ==========================================
+local TARGET_PLACE_ID = 80692223709267
 local isRejoining = false
+local isBypassing243 = false
 
 local function autoRejoin()
-    if isRejoining then return end
+    if game.PlaceId ~= TARGET_PLACE_ID or isRejoining then return end
     isRejoining = true
     
+    local wasFarming = running or wasRunningBeforeDeath
     _G.ScriptRunning = nil
     
     if queue_on_teleport then
         queue_on_teleport([[
-            _G.IsAutoRejoin = true
-            repeat task.wait() until game:IsLoaded()
-            local p = game:GetService("Players").LocalPlayer
-            repeat task.wait() until p and p:FindFirstChild("PlayerGui")
-            
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/vovanxuat12345-tech/Obby-for-ugc-AFK-OR-PLAY-/refs/heads/main/README.md"))()
+            if game.PlaceId == 80692223709267 then
+                _G.IsAutoRejoin = true
+                _G.WasFarmingBeforeRejoin = ]] .. tostring(wasFarming) .. [[
+                repeat task.wait() until game:IsLoaded()
+                local p = game:GetService("Players").LocalPlayer
+                if not p.Character then p.CharacterAdded:Wait() end
+                repeat task.wait() until p and p:FindFirstChild("PlayerGui")
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/vovanxuat12345-tech/Obby-for-ugc-AFK-OR-PLAY-/refs/heads/main/README.md?t=" .. os.time()))()
+            end
         ]])
     end
     
     task.wait(0.5)
-    if #Players:GetPlayers() <= 1 then
-        TeleportService:Teleport(game.PlaceId, player)
-    else
-        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, player)
-    end
+    task.spawn(function()
+        if #Players:GetPlayers() <= 1 then
+            TeleportService:Teleport(TARGET_PLACE_ID, player)
+        else
+            TeleportService:TeleportToPlaceInstance(TARGET_PLACE_ID, game.JobId, player)
+        end
+    end)
+
+    task.delay(12, function()
+        if isRejoining and game.PlaceId == TARGET_PLACE_ID then
+            TeleportService:Teleport(TARGET_PLACE_ID, player)
+        end
+    end)
 end
 
 GuiService.ErrorMessageChanged:Connect(function()
-    autoRejoin()
+    if game.PlaceId == TARGET_PLACE_ID then autoRejoin() end
 end)
 
 game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
-    if child.Name == "ErrorPrompt" then
+    if child.Name == "ErrorPrompt" and game.PlaceId == TARGET_PLACE_ID then autoRejoin() end
+end)
+
+TeleportService.TeleportInitFailed:Connect(function()
+    if game.PlaceId == TARGET_PLACE_ID then
+        isRejoining = false
+        task.wait(1)
         autoRejoin()
     end
 end)
--- ==========================================
 
 local DEFAULT_SETTINGS = {
-    FLY_UP_HEIGHT = 10,
-    FLY_SPEED = 70, 
-    WAIT_TIME = 0.5,
+    FLY_SPEED = 40,
     CHECKPOINT_FOLDER = workspace:WaitForChild("Checkpoints", 15)
 }
 
 local currentFlySpeed = DEFAULT_SETTINGS.FLY_SPEED
-local scanMultiplier = 1 
-
 local running = false
+local wasRunningBeforeDeath = false
 local isMinimized = false
 local protectionConnection = nil
+local currentTargetPart = nil
+local farmingTask = nil 
 
--- ==========================================
--- MENU LOADING CHỮ MÀU ĐỎ + SUBTITLE ROBTOP
--- ==========================================
-local function createLoadingScreen()
-    if not player:FindFirstChild("PlayerGui") then
-        repeat task.wait() until player:FindFirstChild("PlayerGui")
+-- ESP 2D SCREENGUI & DRAWING LIBRARY
+local espGui = game:GetService("CoreGui"):FindFirstChild("Classic_Stage_ESP") or Instance.new("ScreenGui", game:GetService("CoreGui"))
+espGui.Name = "Classic_Stage_ESP"
+espGui:ClearAllChildren()
+local activeESP = {}
+
+local function createClassicESP(part)
+    if not part or not part:IsA("BasePart") or activeESP[part] then return end
+    
+    local bgui = Instance.new("BillboardGui")
+    bgui.Name = "ESP_Text_" .. part.Name; bgui.Adornee = part; bgui.Size = UDim2.new(0, 80, 0, 20); bgui.AlwaysOnTop = true; bgui.ExtentsOffset = Vector3.new(0, 1.8, 0); bgui.Parent = espGui
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1, 0, 1, 0); txt.BackgroundTransparency = 0.4; txt.BackgroundColor3 = Color3.fromRGB(0, 0, 0); txt.Text = "Stage " .. part.Name; txt.TextColor3 = Color3.fromRGB(255, 50, 50); txt.Font = Enum.Font.SourceSansBold; txt.TextSize = 11; txt.Parent = bgui
+    Instance.new("UICorner", txt).CornerRadius = UDim.new(0, 3)
+    
+    local hl = Instance.new("Highlight")
+    hl.Name = "ESP_HL_" .. part.Name; hl.Adornee = part; hl.FillColor = Color3.fromRGB(255, 0, 0); hl.FillTransparency = 0.5; hl.OutlineColor = Color3.fromRGB(255, 255, 255); hl.OutlineTransparency = 0; hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop; hl.Parent = espGui
+    
+    local line2d = Drawing.new("Line")
+    line2d.Color = Color3.fromRGB(255, 0, 0)
+    line2d.Thickness = 1
+    line2d.Transparency = 1
+    line2d.Visible = false
+    
+    activeESP[part] = {Text = bgui, Label = txt, Highlight = hl, Line2D = line2d}
+end
+
+local function removeClassicESP(part)
+    if activeESP[part] then
+        if activeESP[part].Text then activeESP[part].Text:Destroy() end
+        if activeESP[part].Highlight then activeESP[part].Highlight:Destroy() end
+        if activeESP[part].Line2D then 
+            pcall(function() activeESP[part].Line2D:Remove() end)
+        end
+        activeESP[part] = nil
+    end
+end
+
+RunService.RenderStepped:Connect(function()
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not DEFAULT_SETTINGS.CHECKPOINT_FOLDER then return end
+
+    local closestStageNum = -1
+    local minDist = math.huge
+    for _, cp in pairs(DEFAULT_SETTINGS.CHECKPOINT_FOLDER:GetChildren()) do
+        local stageNum = tonumber(cp.Name)
+        if stageNum and cp:IsA("BasePart") then
+            local d = (hrp.Position - cp.Position).Magnitude
+            if d < minDist then minDist = d; closestStageNum = stageNum end
+        end
     end
 
-    local loadingGui = Instance.new("ScreenGui", player.PlayerGui)
-    loadingGui.Name = "Loading_ChienDo"; loadingGui.DisplayOrder = 999
-    
-    local bg = Instance.new("Frame", loadingGui)
-    bg.Size = UDim2.new(1, 0, 1, 0)
-    bg.BackgroundColor3 = Color3.new(0, 0, 0)
-    bg.BackgroundTransparency = 0.2
-    bg.BorderSizePixel = 0
-    
-    local centerContainer = Instance.new("Frame", bg)
-    centerContainer.Size = UDim2.new(0, 600, 0, 100)
-    centerContainer.Position = UDim2.new(0.5, -300, 0.5, -50)
-    centerContainer.BackgroundTransparency = 1
-    
-    local textContainer = Instance.new("Frame", centerContainer)
-    textContainer.Size = UDim2.new(1, 0, 0, 60)
-    textContainer.Position = UDim2.new(0, 0, 0, 0)
-    textContainer.BackgroundTransparency = 1
-    textContainer.ClipsDescendants = false 
-    
-    local layout = Instance.new("UIListLayout", textContainer)
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    local validTargets = {}
+    if currentTargetPart and currentTargetPart:IsA("BasePart") then
+        validTargets[currentTargetPart] = true
+        local currentNum = tonumber(currentTargetPart.Name)
+        if currentNum then
+            local nextPart = DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild(tostring(currentNum + 1))
+            if nextPart then validTargets[nextPart] = true end
+        end
+    else
+        local target1 = DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild(tostring(closestStageNum + 1))
+        local target2 = DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild(tostring(closestStageNum + 2))
+        if target1 then validTargets[target1] = true end
+        if target2 then validTargets[target2] = true end
+    end
 
-    local subVersionLabel = Instance.new("TextLabel", centerContainer)
-    subVersionLabel.Size = UDim2.new(1, 0, 0, 30)
-    subVersionLabel.Position = UDim2.new(0, 0, 0, 65) 
-    subVersionLabel.BackgroundTransparency = 1
-    subVersionLabel.Text = "(version 2.209 By RobTop)"
-    subVersionLabel.TextColor3 = Color3.fromRGB(180, 180, 180) 
-    subVersionLabel.Font = Enum.Font.Gotham
-    subVersionLabel.TextSize = 16
-    subVersionLabel.TextTransparency = 1 
+    for part in pairs(activeESP) do if not validTargets[part] then removeClassicESP(part) end end
+    for part in pairs(validTargets) do
+        if not activeESP[part] then createClassicESP(part) end
+        local espData = activeESP[part]
+        if espData then
+            local dist = math.floor((hrp.Position - part.Position).Magnitude)
+            if espData.Label then espData.Label.Text = "Stage " .. part.Name .. " [" .. dist .. "m]" end
+            
+            if espData.Line2D then
+                local playerHead = player.Character:FindFirstChild("Head") or hrp
+                local p1 = camera:WorldToViewportPoint(playerHead.Position)
+                local p2 = camera:WorldToViewportPoint(part.Position)
+                
+                local toPos = Vector2.new(p2.X, p2.Y)
+                if p2.Z < 0 then
+                    local screenCenter = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+                    toPos = screenCenter - (toPos - screenCenter).Unit * 1000
+                end
+
+                espData.Line2D.From = Vector2.new(p1.X, p1.Y)
+                espData.Line2D.To = toPos
+                espData.Line2D.Visible = true
+            end
+        end
+    end
+end)
+
+local function createLoadingScreen()
+    if not player:FindFirstChild("PlayerGui") then repeat task.wait() until player:FindFirstChild("PlayerGui") end
+    local loadingGui = Instance.new("ScreenGui", player.PlayerGui); loadingGui.Name = "Loading_ChienDo"; loadingGui.DisplayOrder = 999
+    local bg = Instance.new("Frame", loadingGui); bg.Size = UDim2.new(1, 0, 1, 0); bg.BackgroundColor3 = Color3.new(0, 0, 0); bg.BackgroundTransparency = 0.2; bg.BorderSizePixel = 0
+    local centerContainer = Instance.new("Frame", bg); centerContainer.Size = UDim2.new(0, 600, 0, 100); centerContainer.Position = UDim2.new(0.5, -300, 0.5, -50); centerContainer.BackgroundTransparency = 1
+    local textContainer = Instance.new("Frame", centerContainer); textContainer.Size = UDim2.new(1, 0, 0, 60); textContainer.Position = UDim2.new(0, 0, 0, 0); textContainer.BackgroundTransparency = 1; textContainer.ClipsDescendants = false 
+    local layout = Instance.new("UIListLayout", textContainer); layout.FillDirection = Enum.FillDirection.Horizontal; layout.HorizontalAlignment = Enum.HorizontalAlignment.Center; layout.VerticalAlignment = Enum.VerticalAlignment.Center; layout.SortOrder = Enum.SortOrder.LayoutOrder
+    local subVersionLabel = Instance.new("TextLabel", centerContainer); subVersionLabel.Size = UDim2.new(1, 0, 0, 30); subVersionLabel.Position = UDim2.new(0, 0, 0, 65); subVersionLabel.BackgroundTransparency = 1; subVersionLabel.Text = "@chiendo_not_chiendo"; subVersionLabel.TextColor3 = Color3.fromRGB(180, 180, 180); subVersionLabel.Font = Enum.Font.Gotham; subVersionLabel.TextSize = 16; subVersionLabel.TextTransparency = 1 
 
     task.spawn(function()
         for i = 1, 120 do
@@ -128,54 +197,28 @@ local function createLoadingScreen()
         end
     end)
 
-    local textStr = "MADE BY CHIẾN ĐO"
+    local textStr = "OBBY FOR UGC"
     local labels = {}
     local order = 1
-
     for _, c in utf8.codes(textStr) do
         local char = utf8.char(c)
         local charLabel = Instance.new("TextLabel", textContainer)
-        
-        charLabel.Size = UDim2.new(0, char == " " and 15 or 30, 1, 0)
-        charLabel.BackgroundTransparency = 1
-        charLabel.Text = char
-        charLabel.TextColor3 = Color3.new(1, 0, 0) 
-        charLabel.Font = Enum.Font.GothamBold
-        charLabel.TextSize = 45
-        charLabel.LayoutOrder = order
-        
-        charLabel.TextTransparency = 1
-        charLabel.Position = UDim2.new(0, 0, 0, 60) 
-        
+        charLabel.Size = UDim2.new(0, char == " " and 12 or 26, 1, 0); charLabel.BackgroundTransparency = 1; charLabel.Text = char; charLabel.TextColor3 = Color3.new(1, 0, 0); charLabel.Font = Enum.Font.GothamBold; charLabel.TextSize = 36; charLabel.LayoutOrder = order; charLabel.TextTransparency = 1; charLabel.Position = UDim2.new(0, 0, 0, 60)
         table.insert(labels, charLabel)
         order = order + 1
     end
 
     task.spawn(function()
-        for index, label in ipairs(labels) do
-            TweenService:Create(label, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Position = UDim2.new(0, 0, 0, 0),
-                TextTransparency = 0
-            }):Play()
-            
-            task.wait(0.1) 
-        end
-        TweenService:Create(subVersionLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-            TextTransparency = 0
-        }):Play()
+        for index, label in ipairs(labels) do TweenService:Create(label, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0), TextTransparency = 0}):Play(); task.wait(0.08) end
+        TweenService:Create(subVersionLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {TextTransparency = 0}):Play()
     end)
-
-    task.wait(3)
-    loadingGui:Destroy()
+    task.wait(3); loadingGui:Destroy()
 end
--- ==========================================
 
 local function makeDraggable(gui)
     local dragging, dragInput, dragStart, startPos
     gui.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = gui.Position
-        end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = true; dragStart = input.Position; startPos = gui.Position end
     end)
     gui.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
@@ -193,7 +236,6 @@ createLoadingScreen()
 
 local mainGui = Instance.new("ScreenGui", player.PlayerGui)
 mainGui.Name = "AutoObby_GodAlways"; mainGui.ResetOnSpawn = false
-
 local frame = Instance.new("Frame", mainGui)
 frame.Size = UDim2.new(0, 220, 0, 180); frame.Position = UDim2.new(0, 30, 0.5, -90); frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15); frame.BorderSizePixel = 0; frame.ClipsDescendants = true; frame.Active = true
 Instance.new("UICorner", frame); makeDraggable(frame)
@@ -207,60 +249,23 @@ task.spawn(function()
 end)
 
 local topContent = Instance.new("Frame", frame); topContent.Size = UDim2.new(1, 0, 0, 70); topContent.BackgroundTransparency = 1; topContent.ZIndex = 5
-local title = Instance.new("TextLabel", topContent); title.Size = UDim2.new(1, 0, 0, 30); title.Position = UDim2.new(0, 0, 0, 15); title.Text = "obby for ugc"; title.TextColor3 = Color3.new(1, 1, 1); title.Font = Enum.Font.GothamBold; title.TextSize = 18; title.BackgroundTransparency = 1; title.ZIndex = 6
-local subTitle = Instance.new("TextLabel", topContent); subTitle.Size = UDim2.new(1, 0, 0, 20); subTitle.Position = UDim2.new(0, 0, 0, 40); subTitle.Text = "(AFK OR PLAY)"; subTitle.TextColor3 = Color3.fromRGB(200, 200, 200); subTitle.Font = Enum.Font.Gotham; subTitle.TextSize = 14; subTitle.BackgroundTransparency = 1; subTitle.ZIndex = 6
+local title = Instance.new("TextLabel", topContent); title.Size = UDim2.new(1, 0, 0, 22); title.Position = UDim2.new(0, 0, 0, 8); title.Text = "OBBY FOR UGC"; title.TextColor3 = Color3.new(1, 1, 1); title.Font = Enum.Font.GothamBold; title.TextSize = 15; title.BackgroundTransparency = 1; title.ZIndex = 6
+local subTitle1 = Instance.new("TextLabel", topContent); subTitle1.Size = UDim2.new(1, 0, 0, 18); subTitle1.Position = UDim2.new(0, 0, 0, 28); subTitle1.Text = "(AFK OR PLAY)"; subTitle1.TextColor3 = Color3.fromRGB(200, 200, 200); subTitle1.Font = Enum.Font.Gotham; subTitle1.TextSize = 12; subTitle1.BackgroundTransparency = 1; subTitle1.ZIndex = 6
+local subTitle2 = Instance.new("TextLabel", topContent); subTitle2.Size = UDim2.new(1, 0, 0, 18); subTitle2.Position = UDim2.new(0, 0, 0, 46); subTitle2.Text = "@chiendo_not_chiendo"; subTitle2.TextColor3 = Color3.fromRGB(160, 160, 160); subTitle2.Font = Enum.Font.Gotham; subTitle2.TextSize = 11; subTitle2.BackgroundTransparency = 1; subTitle2.ZIndex = 6
 
--- Nút thông báo dấu chấm than "!"
-local infoBtn = Instance.new("TextButton", frame)
-infoBtn.Size = UDim2.new(0, 25, 0, 25)
-infoBtn.Position = UDim2.new(0, 5, 0, 5)
-infoBtn.Text = "!"
-infoBtn.TextColor3 = Color3.new(1, 0, 0)
-infoBtn.BackgroundTransparency = 1
-infoBtn.Font = Enum.Font.GothamBold
-infoBtn.TextSize = 20
-infoBtn.ZIndex = 10
+local infoBtn = Instance.new("TextButton", frame); infoBtn.Size = UDim2.new(0, 25, 0, 25); infoBtn.Position = UDim2.new(0, 5, 0, 5); infoBtn.Text = "!"; infoBtn.TextColor3 = Color3.new(1, 0, 0); infoBtn.BackgroundTransparency = 1; infoBtn.Font = Enum.Font.GothamBold; infoBtn.TextSize = 20; infoBtn.ZIndex = 10
 
--- Bảng thông báo (INFO BOARD)
-local bugReportFrame = Instance.new("TextButton", mainGui)
-bugReportFrame.Size = UDim2.new(0, 320, 0, 180)
-bugReportFrame.Position = UDim2.new(0.5, -160, 0.5, -90)
-bugReportFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
-bugReportFrame.BackgroundTransparency = 0.25
-bugReportFrame.Visible = false
-bugReportFrame.ZIndex = 100
+local bugReportFrame = Instance.new("TextButton", mainGui); bugReportFrame.Size = UDim2.new(0, 320, 0, 180); bugReportFrame.Position = UDim2.new(0.5, -160, 0.5, -90); bugReportFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10); bugReportFrame.BackgroundTransparency = 0.25; bugReportFrame.Visible = false; bugReportFrame.ZIndex = 100
 Instance.new("UICorner", bugReportFrame).CornerRadius = UDim.new(0, 8)
+local stroke = Instance.new("UIStroke", bugReportFrame); stroke.Color = Color3.new(1, 0, 0); stroke.Thickness = 2; stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+local bugTextLabel = Instance.new("TextLabel", bugReportFrame); bugTextLabel.Size = UDim2.new(1, -20, 1, -20); bugTextLabel.Position = UDim2.new(0, 10, 0, 10); bugTextLabel.BackgroundTransparency = 1; bugTextLabel.Text = "-INFO BOARD-\n-Update 1.102😎\n+fixed 2D ESP Line (360° always visible)\n+fixed bug at stage 243\n+fixed anti-cheat kick\n-Next Update 1.2👍\n+add automatic rebirth\n+control panel"; bugTextLabel.TextColor3 = Color3.new(1, 1, 1); bugTextLabel.Font = Enum.Font.GothamMedium; bugTextLabel.TextSize = 14; bugTextLabel.TextWrapped = true; bugTextLabel.TextXAlignment = Enum.TextXAlignment.Left; bugTextLabel.TextYAlignment = Enum.TextYAlignment.Top; bugTextLabel.ZIndex = 101
 
-local stroke = Instance.new("UIStroke", bugReportFrame)
-stroke.Color = Color3.new(1, 0, 0)
-stroke.Thickness = 2
-stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-
-local bugTextLabel = Instance.new("TextLabel", bugReportFrame)
-bugTextLabel.Size = UDim2.new(1, -20, 1, -20)
-bugTextLabel.Position = UDim2.new(0, 10, 0, 10)
-bugTextLabel.BackgroundTransparency = 1
-bugTextLabel.Text = "-INFO BOARD-\n-Update 1.101😎\n+fixed bug at stage 243\n-Next Update 1.2👍\n+add automatic rebirth\n+control panel (speed, altitude, etc.)"
-bugTextLabel.TextColor3 = Color3.new(1, 1, 1)
-bugTextLabel.Font = Enum.Font.GothamMedium
-bugTextLabel.TextSize = 14
-bugTextLabel.TextWrapped = true
-bugTextLabel.TextXAlignment = Enum.TextXAlignment.Left
-bugTextLabel.TextYAlignment = Enum.TextYAlignment.Top
-bugTextLabel.ZIndex = 101
-
-infoBtn.MouseButton1Click:Connect(function()
-    bugReportFrame.Visible = not bugReportFrame.Visible
-end)
-
-bugReportFrame.MouseButton1Click:Connect(function()
-    bugReportFrame.Visible = false
-end)
+infoBtn.MouseButton1Click:Connect(function() bugReportFrame.Visible = not bugReportFrame.Visible end)
+bugReportFrame.MouseButton1Click:Connect(function() bugReportFrame.Visible = false end)
 
 local bottomContent = Instance.new("Frame", frame); bottomContent.Size = UDim2.new(1, 0, 0, 110); bottomContent.Position = UDim2.new(0, 0, 0, 70); bottomContent.BackgroundTransparency = 1; bottomContent.ZIndex = 5
 local btn = Instance.new("TextButton", bottomContent); btn.Size = UDim2.new(0, 180, 0, 50); btn.Position = UDim2.new(0.5, -90, 0, 20); btn.Text = "Auto Farm Stage: OFF"; btn.BackgroundColor3 = Color3.new(1, 1, 1); btn.TextColor3 = Color3.new(0, 0, 0); btn.Font = Enum.Font.GothamBold; btn.TextSize = 15; btn.ZIndex = 6; btn.Active = true
 Instance.new("UICorner", btn)
-
 local toggleBtn = Instance.new("TextButton", frame); toggleBtn.Size = UDim2.new(0, 25, 0, 25); toggleBtn.Position = UDim2.new(1, -30, 0, 5); toggleBtn.Text = "▲"; toggleBtn.TextColor3 = Color3.new(1, 1, 1); toggleBtn.BackgroundTransparency = 1; toggleBtn.Font = Enum.Font.GothamBold; toggleBtn.TextSize = 18; toggleBtn.ZIndex = 10
 
 toggleBtn.MouseButton1Click:Connect(function()
@@ -276,10 +281,12 @@ local function toggleProtection(state)
     if state then
         if not protectionConnection then
             protectionConnection = RunService.Stepped:Connect(function()
-                if player.Character then
+                if running and player.Character then
                     local h = player.Character:FindFirstChildOfClass("Humanoid")
                     if h then h.MaxHealth = math.huge; h.Health = math.huge; h:SetStateEnabled(Enum.HumanoidStateType.Dead, false) end
-                    for _, p in pairs(player.Character:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end
+                    for _, p in pairs(player.Character:GetDescendants()) do 
+                        if p:IsA("BasePart") then p.CanCollide = false; p.AssemblyLinearVelocity = Vector3.zero; p.AssemblyAngularVelocity = Vector3.zero end 
+                    end
                 end
             end)
         end
@@ -288,120 +295,196 @@ local function toggleProtection(state)
     end
 end
 
-local function flyToTarget(target)
-    local char = player.Character; local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp or not target then return end
+local function handleStage243Bypass(target)
+    if isBypassing243 then return end
+    isBypassing243 = true
+
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not running then isBypassing243 = false return end
+
+    local targetCFrame = target and (target.CFrame * CFrame.new(0, 1.5, 0)) or CFrame.new(1761, 776.5, -704.5)
+
+    local startCFrame = hrp.CFrame
+    local distanceTo243 = (startCFrame.Position - targetCFrame.Position).Magnitude
+    local durationTo243 = distanceTo243 / currentFlySpeed
+    local startTimeTo243 = tick()
+
+    local moveConn
+    moveConn = RunService.RenderStepped:Connect(function()
+        if not running or not hrp or not hrp.Parent then if moveConn then moveConn:Disconnect() end return end
+        local alpha = math.clamp((tick() - startTimeTo243) / durationTo243, 0, 1)
+        hrp.CFrame = startCFrame:Lerp(targetCFrame, alpha)
+        if alpha >= 1 then if moveConn then moveConn:Disconnect() end end
+    end)
+
+    while running and (tick() - startTimeTo243) < durationTo243 do task.wait() end
+    if moveConn then moveConn:Disconnect() end
+    if not running then isBypassing243 = false return end
+
+    hrp.CFrame = targetCFrame
+    if firetouchinterest and target and target:IsA("BasePart") then
+        firetouchinterest(hrp, target, 0); task.wait(0.05); firetouchinterest(hrp, target, 1)
+    end
+    task.wait(0.2)
+
+    local stage243Pos = hrp.Position
+    local offsetCFrame = CFrame.new(stage243Pos.X, stage243Pos.Y, stage243Pos.Z + 200)
+    local durationZ = 200 / currentFlySpeed
     
-    local touched = false
-    local conn; conn = target.Touched:Connect(function(hit) 
-        if hit:IsDescendantOf(char) then 
-            touched = true 
-            if conn then conn:Disconnect(); conn = nil end 
-        end 
+    local startTimeZ1 = tick()
+    local connZ1
+    connZ1 = RunService.RenderStepped:Connect(function()
+        if not running or not hrp or not hrp.Parent then if connZ1 then connZ1:Disconnect() end return end
+        local alpha = math.clamp((tick() - startTimeZ1) / durationZ, 0, 1)
+        hrp.CFrame = CFrame.new(stage243Pos):Lerp(offsetCFrame, alpha)
+        if alpha >= 1 then if connZ1 then connZ1:Disconnect() end end
+    end)
+    while running and (tick() - startTimeZ1) < durationZ do task.wait() end
+    if connZ1 then connZ1:Disconnect() end
+    if not running then isBypassing243 = false return end
+
+    hrp.CFrame = offsetCFrame
+
+    toggleProtection(false)
+    task.wait(math.random(20, 30) / 10)
+    if running then toggleProtection(true) end
+
+    isBypassing243 = false
+end
+
+local function flyToTarget(target)
+    currentTargetPart = target
+    local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp or not target or not running then currentTargetPart = nil return end
+    
+    if target.Name == "243" then
+        handleStage243Bypass(target)
+        currentTargetPart = nil
+        return
+    end
+
+    local startCFrame = hrp.CFrame
+    local targetCFrame = target.CFrame * CFrame.new(0, 2, 0)
+    local distance = (startCFrame.Position - targetCFrame.Position).Magnitude
+    local duration = distance / currentFlySpeed
+    local startTime = tick()
+    
+    local moveConnection
+    moveConnection = RunService.RenderStepped:Connect(function()
+        if not running or not hrp or not hrp.Parent then if moveConnection then moveConnection:Disconnect() end return end
+        local elapsed = tick() - startTime
+        local alpha = math.clamp(elapsed / duration, 0, 1)
+        hrp.CFrame = startCFrame:Lerp(targetCFrame, alpha)
+        if alpha >= 1 then if moveConnection then moveConnection:Disconnect() end end
     end)
     
-    local targetPos = target.Position 
+    while running and (tick() - startTime) < duration do task.wait() end
+    if moveConnection then moveConnection:Disconnect() end
+    if not running then currentTargetPart = nil return end
 
-    local upY = hrp.Position.Y + DEFAULT_SETTINGS.FLY_UP_HEIGHT
-    while running and not touched and hrp.Position.Y < upY - 1 do 
-        hrp.Velocity = Vector3.new(0, 50, 0); task.wait() 
+    hrp.CFrame = target.CFrame * CFrame.new(0, 1.5, 0)
+    if firetouchinterest and target:IsA("BasePart") then
+        firetouchinterest(hrp, target, 0); task.wait(0.05); firetouchinterest(hrp, target, 1)
     end
     
-    while running and not touched and (Vector2.new(hrp.Position.X, hrp.Position.Z) - Vector2.new(targetPos.X, targetPos.Z)).Magnitude > 4 do
-        hrp.Velocity = (Vector3.new(targetPos.X, hrp.Position.Y, targetPos.Z) - hrp.Position).Unit * currentFlySpeed
-        task.wait()
-    end
+    toggleProtection(false)
+    local pauseTime = math.random(3, 5) / 10
+    task.wait(pauseTime)
     
-    local t = tick()
-    while running and not touched do
-        hrp.Velocity = (targetPos - hrp.Position).Unit * (currentFlySpeed * 0.4)
-        task.wait()
-        if tick() - t > 6 then 
-            hrp.CFrame = CFrame.new(targetPos); 
-            touched = true 
-        end
-    end
-
-    hrp.Velocity = Vector3.new(0, 0.2, 0)
-    if conn then conn:Disconnect(); conn = nil end 
-    
-    -- ========================================================
-    -- ĐOẠN XỬ LÝ ĐẶC BIỆT KHI ĐỨNG Ở STAGE 243 (DÙNG VELOCITY ĐỂ BAY)
-    -- ========================================================
-    if target.Name == "243" and running then
-        -- 1. Chờ đúng 0.28s khi người chơi đang đứng ở stage 243
-        hrp.Velocity = Vector3.new(0, 0, 0)
-        task.wait(0.28)
-        
-        if running and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local currentHrp = player.Character.HumanoidRootPart
-            local startPos = currentHrp.Position
-            
-            -- Xác định vị trí đích cách 200 studs theo hướng xanh dương (NAM +Z) dựa trên ảnh Screenshot_20260527-113517_Roblox.jpg
-            local blueDirectionPos = Vector3.new(startPos.X, startPos.Y, startPos.Z + 200)
-            
-            -- 2. Dùng lực đẩy Velocity để nhân vật tự bay thẳng theo hướng xanh dương
-            while running and (Vector2.new(currentHrp.Position.X, currentHrp.Position.Z) - Vector2.new(blueDirectionPos.X, blueDirectionPos.Z)).Magnitude > 5 do
-                currentHrp.Velocity = Vector3.new(0, 0.2, currentFlySpeed)
-                task.wait()
-            end
-            
-            -- 3. Bay đủ 200 studs thì dừng hẳn lại
-            currentHrp.Velocity = Vector3.new(0, 0.2, 0)
-        end
-        return -- Kết thúc xử lý riêng cho Stage 243, bỏ qua đoạn delay mặc định ở dưới
-    end
-    -- ========================================================
-    
-    currentFlySpeed = DEFAULT_SETTINGS.FLY_SPEED
-    scanMultiplier = 1
-    
-    task.wait(DEFAULT_SETTINGS.WAIT_TIME) 
+    currentTargetPart = nil
+    if running then toggleProtection(true) end
 end
 
 local function startFarming()
-    running = true; toggleProtection(true)
+    running = true
+    wasRunningBeforeDeath = true
+    toggleProtection(true)
     btn.Text = "Auto Farm Stage: ON"; btn.BackgroundColor3 = Color3.new(1, 0, 0); btn.TextColor3 = Color3.new(1, 1, 1)
     
-    task.spawn(function()
-        local lastFoundTime = tick()
+    if farmingTask then return end 
+    
+    farmingTask = task.spawn(function()
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp and DEFAULT_SETTINGS.CHECKPOINT_FOLDER then
+            local cp243 = DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild("243")
+            local cp242 = DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild("242")
+            if cp243 and cp242 then
+                local dist243 = (hrp.Position - cp243.Position).Magnitude
+                if dist243 <= 25 then
+                    local startCFrame = hrp.CFrame
+                    local targetCFrame = cp242.CFrame * CFrame.new(0, 1.5, 0)
+                    local distance = (startCFrame.Position - targetCFrame.Position).Magnitude
+                    local duration = distance / currentFlySpeed
+                    local startTime = tick()
+                    
+                    local moveConn
+                    moveConn = RunService.RenderStepped:Connect(function()
+                        if not running or not hrp then if moveConn then moveConn:Disconnect() end return end
+                        local alpha = math.clamp((tick() - startTime) / duration, 0, 1)
+                        hrp.CFrame = startCFrame:Lerp(targetCFrame, alpha)
+                        if alpha >= 1 then if moveConn then moveConn:Disconnect() end end
+                    end)
+                    while running and (tick() - startTime) < duration do task.wait() end
+                    if moveConn then moveConn:Disconnect() end
+
+                    if running and hrp then
+                        hrp.CFrame = targetCFrame
+                        if firetouchinterest and cp242:IsA("BasePart") then
+                            firetouchinterest(hrp, cp242, 0); task.wait(0.05); firetouchinterest(hrp, cp242, 1)
+                        end
+                    end
+                    task.wait(math.random(3, 5) / 10)
+                end
+            end
+        end
+
+        local lastStageNum = -1
+        local stuckTime = 0
+        local isSkippingStuck = false
+        
         while running do
             local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then task.wait(1) continue end
+            if not hrp then task.wait(0.5) continue end
             
             local closestStageNum = -1
             local minDist = math.huge
-            
-            for _, cp in pairs(DEFAULT_SETTINGS.CHECKPOINT_FOLDER:GetChildren()) do
-                local stageNum = tonumber(cp.Name)
-                if stageNum and cp:IsA("BasePart") then
-                    local d = (hrp.Position - cp.Position).Magnitude
-                    if d < minDist then
-                        minDist = d
-                        closestStageNum = stageNum
+            if DEFAULT_SETTINGS.CHECKPOINT_FOLDER then
+                for _, cp in pairs(DEFAULT_SETTINGS.CHECKPOINT_FOLDER:GetChildren()) do
+                    local stageNum = tonumber(cp.Name)
+                    if stageNum and cp:IsA("BasePart") then
+                        local d = (hrp.Position - cp.Position).Magnitude
+                        if d < minDist then minDist = d; closestStageNum = stageNum end
                     end
                 end
             end
             
-            local nextTarget = DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild(tostring(closestStageNum + 1))
-            
-            if nextTarget then
-                lastFoundTime = tick()
-                flyToTarget(nextTarget)
-            else
-                if tick() - lastFoundTime > 5 then
-                    scanMultiplier = 2
-                    currentFlySpeed = DEFAULT_SETTINGS.FLY_SPEED * 1.5
-                    lastFoundTime = tick()
+            if closestStageNum == lastStageNum then
+                stuckTime = stuckTime + 0.5
+                if stuckTime >= 15 and not isSkippingStuck then
+                    isSkippingStuck = true
+                    local nextStageObj = DEFAULT_SETTINGS.CHECKPOINT_FOLDER and DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild(tostring(closestStageNum + 1))
+                    if nextStageObj then flyToTarget(nextStageObj) end
+                    stuckTime = 0; isSkippingStuck = false
+                    task.wait(0.5)
+                    continue
                 end
-                task.wait(0.5)
+            else
+                lastStageNum = closestStageNum
+                stuckTime = 0
             end
+            
+            local nextTarget = DEFAULT_SETTINGS.CHECKPOINT_FOLDER and DEFAULT_SETTINGS.CHECKPOINT_FOLDER:FindFirstChild(tostring(closestStageNum + 1))
+            if nextTarget then flyToTarget(nextTarget) else task.wait(0.5) end
         end
+        farmingTask = nil
     end)
 end
 
 local function stopFarming()
-    running = false; toggleProtection(false)
+    running = false
+    wasRunningBeforeDeath = false
+    currentTargetPart = nil
+    toggleProtection(false)
     btn.Text = "Auto Farm Stage: OFF"; btn.BackgroundColor3 = Color3.new(1, 1, 1); btn.TextColor3 = Color3.new(0, 0, 0)
 end
 
@@ -409,19 +492,27 @@ btn.MouseButton1Click:Connect(function()
     if running then stopFarming() else startFarming() end
 end)
 
-player.CharacterAdded:Connect(function() 
-    running = false; toggleProtection(false)
-    currentFlySpeed = DEFAULT_SETTINGS.FLY_SPEED
-    scanMultiplier = 1
-    btn.Text = "Auto Farm Stage: OFF"; btn.BackgroundColor3 = Color3.new(1, 1, 1) 
+player.CharacterAdded:Connect(function(newChar) 
+    toggleProtection(false)
+    currentTargetPart = nil
+    
+    if wasRunningBeforeDeath then
+        task.spawn(function()
+            newChar:WaitForChild("HumanoidRootPart", 9e9)
+            task.wait(1)
+            if wasRunningBeforeDeath then startFarming() end
+        end)
+    else
+        btn.Text = "Auto Farm Stage: OFF"; btn.BackgroundColor3 = Color3.new(1, 1, 1); btn.TextColor3 = Color3.new(0, 0, 0)
+    end
 end)
 
 if _G.IsAutoRejoin then
     _G.IsAutoRejoin = nil
     task.spawn(function()
-        task.wait(3.5)
-        if not running then
-            startFarming()
-        end
+        local char = player.Character or player.CharacterAdded:Wait()
+        char:WaitForChild("HumanoidRootPart", 9e9)
+        task.wait(1.5)
+        startFarming()
     end)
 end
